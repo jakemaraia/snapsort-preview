@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>SnapSort preview</title>
+<title>SnapSort preview</title><!-- v2-autoadd -->
 <meta name="description" content="Screenshot → calendar. A web preview of the SnapSort iPhone app.">
 <style>
 :root{--bg:#f2f2f7;--card:#fff;--txt:#111;--sub:#6b6b70;--blue:#007aff;--green:#34c759;--red:#ff3b30;--orange:#ff9500}
@@ -41,97 +41,69 @@ dialog input{width:100%;padding:8px;font-size:16px;border:1px solid #ccc;border-
   <img src="samples/group-chat.png" alt="Group chat">
 </div>
 <div class="drop" id="drop">Drop a screenshot here</div>
-<h2><span>Needs review (<span id="rc">0</span>)</span></h2><div class="list" id="review"></div>
 <h2><span>Added to calendar (<span id="ac">0</span>)</span><button class="btn ghost" id="icsAll" style="font-size:13px">Download all .ics</button></h2><div class="list" id="added"></div>
 <details><summary>Last OCR text</summary><pre id="ocr">(none yet)</pre></details>
-<p class="hint">Swipe right to add or left to dismiss, or use the buttons. Items need ≥80% confidence and a start time to be added automatically. On iPhone, a Shortcuts automation runs this every time you take a screenshot.</p>
+<p class="hint">Everything found is added automatically. Swipe left or tap Undo to remove a mistake. Date-only items become all-day events. On iPhone, a Shortcuts automation runs this every time you take a screenshot.</p>
 </div>
 <div id="status"></div>
-<dialog id="dlg"><form method="dialog">
-<b>Review item</b>
-<label>Title<input id="fTitle"></label><label>Start (<span id="fTz"></span>)<input id="fStart" type="datetime-local"></label>
-<label>End<input id="fEnd" type="datetime-local"></label><label>Location<input id="fLoc"></label>
-<p style="display:flex;gap:8px;justify-content:end"><button class="btn ghost" value="cancel">Cancel</button><button class="btn" value="ok">Add to calendar</button></p>
-</form></dialog>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="parser.js"></script>
 <script>
-const state = {review: [], added: []};
+const state = {added: []};
 const $ = id => document.getElementById(id);
 const status = (m, ms) => { const s = $("status"); s.textContent = m; s.style.display = m ? "block" : "none"; if (ms) setTimeout(() => s.style.display = "none", ms); };
 let worker;
-async function ocr(src) {
-  worker ||= await Tesseract.createWorker("eng");
-  const { data } = await worker.recognize(src);
-  return data.text;
-}
+async function ocr(src) { worker ||= await Tesseract.createWorker("eng"); const { data } = await worker.recognize(src); return data.text; }
 async function processImage(src) {
   try {
     status("Reading screenshot…");
     const text = await ocr(src);
     $("ocr").textContent = text;
-    const items = SnapSort.parse(text);
-    let a = 0, r = 0;
-    for (const it of items) { it.thumb = src; if (SnapSort.route(it) === "added") { state.added.unshift(it); a++; } else { state.review.unshift(it); r++; } }
+    const items = SnapSort.toAdd(SnapSort.parse(text));
+    for (const it of items) { it.thumb = src; state.added.unshift(it); }
     render();
-    status(items.length ? `Added ${a}` + (r ? `, ${r} waiting for review` : "") : "Nothing to add", 2500);
+    status(items.length ? `Added ${items.length} to your calendar` : "Nothing to add", 2500);
   } catch (e) { console.error(e); status("Couldn't read that image: " + e.message, 4000); }
 }
-const fmt = (d, tz) => d ? d.toLocaleString("en-US", {timeZone: tz, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short"}) : null;
-function row(it, list) {
+const fmt = (d, tz, allDay) => allDay ? d.toLocaleDateString("en-US", {timeZone: tz, weekday: "short", month: "short", day: "numeric"}) + " · All day"
+  : d.toLocaleString("en-US", {timeZone: tz, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short"});
+const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function row(it) {
   const el = document.createElement("div"); el.className = "row";
-  const time = fmt(it.start, it.startTimeZone);
   const arr = it.kind === "flight" && it.end ? ` → ${fmt(it.end, it.endTimeZone)}` : "";
-  el.innerHTML = `<div class="acts"><div style="background:var(--green)">Add</div><div style="background:var(--red)">Dismiss</div></div>
+  el.innerHTML = `<div class="acts"><div></div><div style="background:var(--red)">Undo</div></div>
    <div class="content"><img class="thumb" src="${it.thumb}"><div class="main"><div class="t"></div>
-   <div class="s ${time && it.hasTime !== false ? "" : "warn"}">${time && it.hasTime !== false ? time + arr : "No time found"}</div>
-   <div class="c">${it.kind} · ${Math.round(it.confidence * 100)}% · ${it.source}${it.location ? " · " + esc(it.location) : ""}</div></div>
-   <div class="mini">${list === "review" ? `<button style="background:var(--blue)" data-a="edit">Edit</button><button style="background:var(--green)" data-a="add">Add</button>` : `<button style="background:var(--blue)" data-a="ics">.ics</button>`}</div></div>`;
+   <div class="s">${fmt(it.start, it.startTimeZone, it.allDay) + arr}</div>
+   ${it.location ? `<div class="c">${esc(it.location)}</div>` : ""}</div>
+   <div class="mini"><button style="background:var(--blue)" data-a="ics">.ics</button><button style="background:var(--red)" data-a="undo">Undo</button></div></div>`;
   el.querySelector(".t").textContent = it.title;
-  el.querySelectorAll("button").forEach(b => b.onclick = () => ({add: () => approve(it), edit: () => edit(it), ics: () => download([it])})[b.dataset.a]());
-  if (list === "review") swipe(el.querySelector(".content"), it);
+  el.querySelectorAll("button").forEach(b => b.onclick = () => b.dataset.a === "ics" ? download([it]) : undo(it));
+  swipe(el.querySelector(".content"), it);
   return el;
 }
-const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function swipe(c, it) {
   let x0 = null, dx = 0;
   c.addEventListener("pointerdown", e => { if (e.target.tagName === "BUTTON") return; x0 = e.clientX; c.setPointerCapture(e.pointerId); c.style.transition = "none"; });
-  c.addEventListener("pointermove", e => { if (x0 === null) return; dx = e.clientX - x0; c.style.transform = `translateX(${dx}px)`; });
-  c.addEventListener("pointerup", () => { if (x0 === null) return; x0 = null; c.style.transition = "";
-    if (dx > 90) approve(it); else if (dx < -90) dismiss(it); else c.style.transform = ""; dx = 0; });
+  c.addEventListener("pointermove", e => { if (x0 === null) return; dx = Math.min(0, e.clientX - x0); c.style.transform = `translateX(${dx}px)`; });
+  c.addEventListener("pointerup", () => { if (x0 === null) return; x0 = null; c.style.transition = ""; if (dx < -90) undo(it); else c.style.transform = ""; dx = 0; });
 }
-function approve(it) {
-  if (!it.start || it.hasTime === false) return edit(it);
-  state.review = state.review.filter(x => x !== it); state.added.unshift(it); render(); status("Added to calendar", 1500);
-}
-function dismiss(it) { state.review = state.review.filter(x => x !== it); render(); }
-function toLocalInput(d, tz) { if (!d) return ""; const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"}).formatToParts(d).map(x => [x.type, x.value])); return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`; }
-function fromLocalInput(v, tz) { if (!v) return null; const [d, t] = v.split("T"); const [y, mo, dd] = d.split("-").map(Number); const [h, mi] = t.split(":").map(Number);
-  const g = Date.UTC(y, mo - 1, dd, h, mi); const off = dt => { const s = toLocalInput(dt, tz); const [a, b] = s.split("T"); const [Y, M, D] = a.split("-").map(Number); const [H, I] = b.split(":").map(Number); return Date.UTC(Y, M - 1, D, H, I) - dt.getTime(); };
-  let ts = g - off(new Date(g)); ts = g - off(new Date(ts)); return new Date(ts); }
-function edit(it) {
-  $("fTitle").value = it.title; $("fTz").textContent = it.startTimeZone; $("fLoc").value = it.location || "";
-  $("fStart").value = it.hasTime === false ? "" : toLocalInput(it.start, it.startTimeZone); $("fEnd").value = toLocalInput(it.end, it.endTimeZone);
-  $("dlg").onclose = () => { if ($("dlg").returnValue !== "ok") return;
-    it.title = $("fTitle").value; it.location = $("fLoc").value || null;
-    it.start = fromLocalInput($("fStart").value, it.startTimeZone); it.end = fromLocalInput($("fEnd").value, it.endTimeZone);
-    if (!it.start) return status("Add a start time first", 2000);
-    it.hasTime = true; approve(it); };
-  $("dlg").showModal();
-}
+function undo(it) { state.added = state.added.filter(x => x !== it); render(); status("Removed from calendar", 1500); }
 function render() {
-  for (const k of ["review", "added"]) { const L = $(k); L.innerHTML = ""; state[k].forEach(it => L.appendChild(row(it, k)));
-    if (!state[k].length) L.innerHTML = `<div class="empty">${k === "review" ? "Nothing to review" : "Nothing yet"}</div>`; }
-  $("rc").textContent = state.review.length; $("ac").textContent = state.added.length;
+  const L = $("added"); L.innerHTML = ""; state.added.forEach(it => L.appendChild(row(it)));
+  if (!state.added.length) L.innerHTML = `<div class="empty">Nothing yet</div>`;
+  $("ac").textContent = state.added.length;
 }
 const icsDate = d => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+const icsDay = (d, tz) => new Intl.DateTimeFormat("en-CA", {timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit"}).format(d).replace(/-/g, "");
 const icsEsc = s => (s || "").replace(/[\\,;]/g, m => "\\" + m).replace(/\n/g, "\\n");
 function download(items) {
   if (!items.length) return status("Nothing added yet", 1500);
-  const ev = items.map(it => { const end = it.end || new Date(it.start.getTime() + (it.kind === "flight" ? 7200e3 : 3600e3));
-    const notes = `Added by SnapSort (${it.source}, confidence ${Math.round(it.confidence * 100)}%)` + (it.flight ? `\nFlight ${it.flight.flightNumber} ${it.flight.origin || ""} → ${it.flight.destination || ""}` : "") + (it.endTimeZone !== it.startTimeZone ? `\nArrival time zone: ${it.endTimeZone}` : "");
+  const ev = items.map(it => {
+    const when = it.allDay ? `DTSTART;VALUE=DATE:${icsDay(it.start, it.startTimeZone)}\r\nDTEND;VALUE=DATE:${icsDay(new Date(it.start.getTime() + 86400e3), it.startTimeZone)}`
+      : `DTSTART:${icsDate(it.start)}\r\nDTEND:${icsDate(it.end || new Date(it.start.getTime() + (it.kind === "flight" ? 7200e3 : 3600e3)))}`;
+    const notes = "Added by SnapSort" + (it.flight ? `\nFlight ${it.flight.flightNumber} ${it.flight.origin || ""} → ${it.flight.destination || ""}` : "") + (it.endTimeZone !== it.startTimeZone ? `\nArrival time zone: ${it.endTimeZone}` : "");
     const alarms = it.kind === "flight" ? ["-P1D", "-PT3H"].map(t => `BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:${icsEsc(it.title)}\r\nTRIGGER:${t}\r\nEND:VALARM`).join("\r\n") + "\r\n" : "";
-    return `BEGIN:VEVENT\r\nUID:${it.id}@snapsort\r\nDTSTAMP:${icsDate(new Date())}\r\nDTSTART:${icsDate(it.start)}\r\nDTEND:${icsDate(end)}\r\nSUMMARY:${icsEsc(it.title)}\r\n${it.location ? `LOCATION:${icsEsc(it.location)}\r\n` : ""}DESCRIPTION:${icsEsc(notes)}\r\n${alarms}END:VEVENT`; }).join("\r\n");
+    return `BEGIN:VEVENT\r\nUID:${it.id}@snapsort\r\nDTSTAMP:${icsDate(new Date())}\r\n${when}\r\nSUMMARY:${icsEsc(it.title)}\r\n${it.location ? `LOCATION:${icsEsc(it.location)}\r\n` : ""}DESCRIPTION:${icsEsc(notes)}\r\n${alarms}END:VEVENT`; }).join("\r\n");
   const blob = new Blob([`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//SnapSort//Preview//EN\r\n${ev}\r\nEND:VCALENDAR\r\n`], {type: "text/calendar"});
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = items.length === 1 ? "snapsort-event.ics" : "snapsort-events.ics"; a.click();
 }

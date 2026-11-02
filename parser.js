@@ -1,4 +1,4 @@
-// Port of Sources/SnapSortCore (RuleBasedParser, DateParsing, ConfidenceRouter). Keep rules in sync.
+// Port of Sources/SnapSortCore (RuleBasedParser, DateParsing, ExtractionPipeline skip rule). Keep rules in sync.
 (function (root) {
   const AIRPORTS = {JFK:"America/New_York",LGA:"America/New_York",EWR:"America/New_York",BOS:"America/New_York",IAD:"America/New_York",DCA:"America/New_York",ATL:"America/New_York",MIA:"America/New_York",MCO:"America/New_York",ORD:"America/Chicago",DFW:"America/Chicago",IAH:"America/Chicago",DEN:"America/Denver",PHX:"America/Phoenix",LAS:"America/Los_Angeles",LAX:"America/Los_Angeles",SFO:"America/Los_Angeles",SEA:"America/Los_Angeles",YYZ:"America/Toronto",LHR:"Europe/London",CDG:"Europe/Paris",AMS:"Europe/Amsterdam",FRA:"Europe/Berlin",DXB:"Asia/Dubai",NRT:"Asia/Tokyo",HND:"Asia/Tokyo",SYD:"Australia/Sydney",HNL:"Pacific/Honolulu"};
   const TZ_ABBREV = {EST:"America/New_York",EDT:"America/New_York",ET:"America/New_York",CST:"America/Chicago",CDT:"America/Chicago",CT:"America/Chicago",MST:"America/Denver",MDT:"America/Denver",PST:"America/Los_Angeles",PDT:"America/Los_Angeles",PT:"America/Los_Angeles",GMT:"Europe/London",BST:"Europe/London",CET:"Europe/Paris",UTC:"UTC",JST:"Asia/Tokyo"};
@@ -78,10 +78,9 @@
         endD = make(arrDate, ts[1], arrTZ);
         if (start && endD <= start) endD = new Date(endD.getTime() + 86400000);
       }
-      let conf = 0.4; if (origin) conf += 0.2; if (date) conf += 0.15; if (start) conf += 0.1; if (endD) conf += 0.1;
       items.push({id: crypto.randomUUID(), kind:"flight", title:`✈️ ${fn}` + (origin ? ` ${origin} → ${dest}` : ""),
         start, end: endD, startTimeZone: depTZ, endTimeZone: arrTZ, location: origin,
-        flight: {flightNumber: fn, origin, destination: dest}, confidence: Math.min(conf, 0.95), source: "rules"});
+        flight: {flightNumber: fn, origin, destination: dest}, allDay: false, source: "rules"});
     });
     return items;
   }
@@ -105,9 +104,8 @@
       }
       const start = make(date, ts[0] || {h:0, mi:0}, tz);
       const end = ts.length > 1 ? make(date, ts[1], tz) : null;
-      let conf = 0.55; if (ts.length) conf += 0.25; if (title !== "Event") conf += 0.1; if (location) conf += 0.05;
       items.push({id: crypto.randomUUID(), kind:"event", title, start, end, startTimeZone: tz, endTimeZone: tz,
-        location, flight: null, confidence: conf, source: "rules", hasTime: ts.length > 0});
+        location, flight: null, allDay: ts.length === 0, source: "rules"});
     });
     return items;
   }
@@ -117,8 +115,9 @@
     const f = parseFlights(lines, defTZ);
     return f.length ? f : parseEvents(lines, defTZ);
   }
-  const route = (item, threshold = 0.8) => (item.start && item.confidence >= threshold) ? "added" : "review";
+  // Everything with a date is added; items without one are skipped (logged only).
+  const toAdd = items => items.filter(i => i.start || (console.log(`[SnapSort] Skipped ${i.kind} "${i.title}": no date`), false));
 
-  root.SnapSort = { parse, route, AIRPORTS };
+  root.SnapSort = { parse, toAdd, AIRPORTS };
   if (typeof module !== "undefined") module.exports = root.SnapSort;
 })(typeof window !== "undefined" ? window : globalThis);
