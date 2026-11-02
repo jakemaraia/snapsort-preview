@@ -24,7 +24,7 @@ im.save("samples/flight-confirmation.png")
 # 2. Event flyer
 im, d = base((24, 16, 48), "white")
 d.text((40, 220), "LIVE MUSIC", font=font(36, True), fill=(255, 196, 0))
-d.text((40, 300), "Brooklyn Rooftop", font=font(60, True), fill="white"); d.text((40, 380), "Jazz Night", font=font(60, True), fill="white")
+d.text((40, 320), "Rooftop Jazz Night", font=font(60, True), fill="white")
 y = 520
 for line in ["Saturday, July 10, 2027", "7:30 PM - 10:00 PM ET", "Location: 123 Main St, Brooklyn"]:
     d.text((40, y), line, font=font(38), fill="white"); y += 80
@@ -37,6 +37,6 @@ d.text((290, 100), "Family", font=font(34, True), fill="black")
 y = 200
 for line, me in [("Dinner at Nonna's", False), ("2027-01-12 19:30", False), ("Mom's birthday", True), ("Aug 3, 2027", True)]:
     tw = d.textlength(line, font=font(34)); x = W - tw - 70 if me else 40
-    d.rounded_rectangle([x - 20, y - 14, x + tw + 20, y + 54], 28, fill=(0, 122, 255) if me else (229, 229, 234))
-    d.text((x, y), line, font=font(34), fill="white" if me else "black"); y += 110
+    d.rounded_rectangle([x - 20, y - 14, x + tw + 20, y + 54], 28, fill=(205, 226, 255) if me else (229, 229, 234))
+    d.text((x, y), line, font=font(34), fill="black"); y += 110
 im.save("samples/group-chat.png")
